@@ -21,15 +21,18 @@ def calculate_replenishment(stock_level, daily_usage, safety_stock, lead_time):
     replenishment_point = safety_stock + consumption
     return replenishment_point
 
+# 必要な補充量を計算
+def calculate_replenishment_quantity(stock_level, replenishment_point):
+    return max(0, replenishment_point - stock_level)
+
 # 在庫補充通知のメール送信機能
-def send_email_notification(to_emails, stock_level, replenishment_point):
+def send_email_notification(to_emails, stock_level, replenishment_point, replenishment_quantity, store_name):
     subject = "在庫補充のお知らせ"
-    body = f"現在の在庫 ({stock_level} 単位) が補充ポイント ({replenishment_point} 単位) を下回りました。"
-    
+    body = f"{store_name} の現在の在庫 ({stock_level} 単位) が補充ポイント ({replenishment_point} 単位) を下回っています。補充が必要な量は {replenishment_quantity} 単位です。"
+
     from_email = "youremail@example.com"
     password = "yourpassword"
     
-    # 複数メールアドレスへ通知
     for email in to_emails:
         msg = MIMEMultipart()
         msg["From"] = from_email
@@ -58,45 +61,53 @@ with st.expander("アプリの使い方を表示"):
     - **1日の消費量**: 1日に消費される商品の単位数。
     - **安全在庫数**: 補充が必要になる前に維持したい最小限の在庫量。
     - **リードタイム**: 注文から納入までにかかる日数。
-    在庫が補充ポイントを下回った場合、警告が表示され、複数メールアドレスに通知が送信されます。
+    在庫が補充ポイントを下回った場合、警告が表示され、補充が必要な量と共に、複数のメールアドレスに通知が送信されます。
     """)
 
 # サイドバーでパラメータを入力
 st.sidebar.header("在庫パラメータ")
-stock_level = st.sidebar.number_input("現在の在庫数", min_value=0, value=500)
 daily_usage = st.sidebar.number_input("1日の消費量（単位）", min_value=0, value=50)
 safety_stock = st.sidebar.number_input("安全在庫数", min_value=0, value=30)
 lead_time = st.sidebar.number_input("リードタイム（日数）", min_value=0, value=5)
 email_addresses = st.sidebar.text_input("通知用メールアドレス（複数の場合はカンマ区切り）", value="")
 
-# 補充ポイントを計算
-replenishment_point = calculate_replenishment(stock_level, daily_usage, safety_stock, lead_time)
+# サンプルデータ（CSVからのデータを想定）
+warehouse_data = pd.DataFrame({
+    '店舗名': ['倉庫A', '倉庫B', '店舗A'],
+    '住所': ['東京都新宿区西新宿2-8-1', '大阪府大阪市北区梅田1-1-1', '福岡県福岡市博多駅中央街1-1'],
+    '在庫数': [300, 150, 500]
+})
 
-# 在庫の補充が必要かを確認
-if stock_level <= replenishment_point:
-    st.warning(f"在庫が補充ポイント ({replenishment_point} 単位) を下回っています。補充を検討してください。")
+# 各店舗での補充ポイントを計算し、補充が必要な量を計算
+warehouse_data['補充ポイント'] = warehouse_data['在庫数'].apply(lambda x: calculate_replenishment(x, daily_usage, safety_stock, lead_time))
+warehouse_data['不足量'] = warehouse_data.apply(lambda row: calculate_replenishment_quantity(row['在庫数'], row['補充ポイント']), axis=1)
+
+# 在庫が補充ポイントを下回っている店舗をリストアップ
+shortage_stores = warehouse_data[warehouse_data['不足量'] > 0]
+
+# 不足がある場合は警告を表示し、メール送信オプションを提供
+if not shortage_stores.empty:
+    for _, row in shortage_stores.iterrows():
+        st.warning(f"{row['店舗名']} の在庫が補充ポイント ({row['補充ポイント']} 単位) を下回っています。補充が必要な量は {row['不足量']} 単位です。")
     
     if email_addresses:
         email_list = email_addresses.split(',')
         if st.sidebar.button("メールで通知を送信"):
-            send_email_notification(email_list, stock_level, replenishment_point)
+            for _, row in shortage_stores.iterrows():
+                send_email_notification(email_list, row['在庫数'], row['補充ポイント'], row['不足量'], row['店舗名'])
 else:
-    st.success(f"在庫は十分です。現在の在庫数: {stock_level} 単位。")
-
-# 次の入荷日の予測
-next_arrival_date = datetime.now() + timedelta(days=lead_time)
-st.write(f"次の入荷予定日: {next_arrival_date.strftime('%Y-%m-%d')}")
+    st.success("すべての店舗で在庫は十分です。")
 
 # 在庫消費量の可視化（Plotlyを使用）
 stock_data = {
     "日付": [f"Day {i+1}" for i in range(lead_time)],
-    "在庫数": [stock_level - daily_usage * i for i in range(lead_time)],
+    "在庫数": [warehouse_data['在庫数'].mean() - daily_usage * i for i in range(lead_time)],
     "安全在庫": [safety_stock for _ in range(lead_time)]
 }
 df = pd.DataFrame(stock_data)
 
 # 複数指標の可視化
-fig = px.line(df, x="日付", y=["在庫数", "安全在庫"], title="在庫と安全在庫の推移", markers=True)
+fig = px.line(df, x="日付", y=["在庫数", "安全在庫"], title="平均在庫と安全在庫の推移", markers=True)
 st.plotly_chart(fig)
 
 # ======= 地理的可視化機能（サブ機能）=======
@@ -113,13 +124,6 @@ def geocode_address(address):
     except:
         return None, None
 
-# サンプルデータ（CSVからのデータを想定）
-warehouse_data = pd.DataFrame({
-    '倉庫名': ['倉庫A', '倉庫B', '店舗A'],
-    '住所': ['東京都新宿区西新宿2-8-1', '大阪府大阪市北区梅田1-1-1', '福岡県福岡市博多駅中央街1-1'],
-    '在庫数': [300, 150, 500]
-})
-
 # 住所から緯度経度を取得
 warehouse_data['緯度'], warehouse_data['経度'] = zip(*warehouse_data['住所'].apply(geocode_address))
 
@@ -130,7 +134,7 @@ for i, row in warehouse_data.iterrows():
     if pd.notnull(row['緯度']) and pd.notnull(row['経度']):
         folium.Marker(
             location=[row['緯度'], row['経度']],
-            popup=f"{row['倉庫名']}: {row['在庫数']}個",
+            popup=f"{row['店舗名']}: {row['在庫数']}個",
             icon=folium.Icon(color="blue" if row['在庫数'] > 200 else "red")
         ).add_to(m)
 
