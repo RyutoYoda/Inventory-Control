@@ -13,7 +13,7 @@ from email.mime.multipart import MIMEMultipart
 geolocator = Nominatim(user_agent="inventory_app")
 
 # ページの設定
-st.set_page_config(page_title="在庫管理アプリ", page_icon="📦")
+st.set_page_config(page_title="在庫管理アプリ", page_icon="📦", layout="wide")
 
 # 補充タイミングを計算する関数
 def calculate_replenishment(stock_level, daily_usage, safety_stock, lead_time):
@@ -26,10 +26,12 @@ def calculate_replenishment_quantity(stock_level, replenishment_point):
     return max(0, replenishment_point - stock_level)
 
 # 在庫補充通知のメール送信機能
-def send_email_notification(to_emails, stock_level, replenishment_point, replenishment_quantity, store_name):
+def send_email_notification(to_emails, stores_info):
     subject = "在庫補充のお知らせ"
-    body = f"{store_name} の現在の在庫 ({stock_level} 単位) が補充ポイント ({replenishment_point} 単位) を下回っています。補充が必要な量は {replenishment_quantity} 単位です。"
-
+    body = "以下の店舗で補充が必要です:\n\n"
+    for info in stores_info:
+        body += f"{info['店舗名']}: 現在の在庫 {info['在庫数']} 単位、補充ポイント {info['補充ポイント']} 単位、補充必要量 {info['不足量']} 単位\n"
+    
     from_email = "youremail@example.com"
     password = "yourpassword"
     
@@ -52,7 +54,7 @@ def send_email_notification(to_emails, stock_level, replenishment_point, repleni
             st.error(f"メール送信に失敗しました ({email}): {e}")
 
 # ページタイトル
-st.title("在庫管理と補充通知アプリ")
+st.title("📦 在庫管理と補充通知アプリ")
 
 # トグルでアプリの使い方を表示
 with st.expander("アプリの使い方を表示"):
@@ -65,7 +67,7 @@ with st.expander("アプリの使い方を表示"):
     """)
 
 # サイドバーでパラメータを入力
-st.sidebar.header("在庫パラメータ")
+st.sidebar.header("🔧 在庫パラメータの設定")
 daily_usage = st.sidebar.number_input("1日の消費量（単位）", min_value=0, value=50)
 safety_stock = st.sidebar.number_input("安全在庫数", min_value=0, value=30)
 lead_time = st.sidebar.number_input("リードタイム（日数）", min_value=0, value=5)
@@ -93,8 +95,8 @@ if not shortage_stores.empty:
     if email_addresses:
         email_list = email_addresses.split(',')
         if st.sidebar.button("メールで通知を送信"):
-            for _, row in shortage_stores.iterrows():
-                send_email_notification(email_list, row['在庫数'], row['補充ポイント'], row['不足量'], row['店舗名'])
+            stores_info = shortage_stores.to_dict('records')
+            send_email_notification(email_list, stores_info)
 else:
     st.success("すべての店舗で在庫は十分です。")
 
