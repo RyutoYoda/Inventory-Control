@@ -73,12 +73,12 @@ if uploaded_file is not None:
             return None, None
 
     # 緯度・経度を取得
-    warehouse_data['緯度'], warehouse_data['経度'] = zip(*warehouse_data['住所'].apply(geocode_address))
+    warehouse_data['latitude'], warehouse_data['longitude'] = zip(*warehouse_data['住所'].apply(geocode_address))
 
     # 緯度・経度が存在する行のみをフィルタリング
-    warehouse_data_clean = warehouse_data.dropna(subset=['緯度', '経度'])
+    warehouse_data_clean = warehouse_data.dropna(subset=['latitude', 'longitude'])
 
     # Streamlitのst.mapで地図を表示
-    st.map(warehouse_data_clean[['緯度', '経度']])
+    st.map(warehouse_data_clean[['latitude', 'longitude']])
 else:
     st.warning("CSVファイルをアップロードしてください。")
