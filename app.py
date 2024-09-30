@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from geopy.geocoders import Nominatim
+import plotly.express as px
 import time
 
 # Geocoderの設定
@@ -59,6 +60,21 @@ if uploaded_file is not None:
     else:
         st.success("すべての店舗で在庫は十分です。")
 
+    # ======= 在庫消費量の可視化（Plotlyを使用） =======
+    st.write("### 在庫推移のグラフ")
+
+    # 在庫消費量の可視化
+    stock_data = {
+        "日付": [f"Day {i+1}" for i in range(lead_time)],
+        "在庫数": [warehouse_data['在庫数'].mean() - daily_usage * i for i in range(lead_time)],
+        "安全在庫": [safety_stock for _ in range(lead_time)]
+    }
+    df = pd.DataFrame(stock_data)
+
+    # 複数指標の可視化
+    fig = px.line(df, x="日付", y=["在庫数", "安全在庫"], title="平均在庫と安全在庫の推移", markers=True)
+    st.plotly_chart(fig)
+
     # ======= 地理的可視化機能 =======
     st.write("### 倉庫・店舗の在庫マップ")
 
@@ -90,7 +106,10 @@ if uploaded_file is not None:
     # 緯度・経度が存在する行のみをフィルタリング
     warehouse_data_clean = warehouse_data.dropna(subset=['latitude', 'longitude'])
 
+    # 列名を英語に変更してst.mapに対応させる
+    warehouse_data_clean = warehouse_data_clean.rename(columns={"latitude": "lat", "longitude": "lon"})
+
     # Streamlitのst.mapで地図を表示
-    st.map(warehouse_data_clean[['latitude', 'longitude']])
+    st.map(warehouse_data_clean[['lat', 'lon']])
 else:
     st.warning("CSVファイルをアップロードしてください。")
