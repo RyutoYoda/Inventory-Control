@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import pydeck as pdk
 from geopy.geocoders import Nominatim
 
 # Geocoderの設定
@@ -58,7 +59,7 @@ if uploaded_file is not None:
     else:
         st.success("すべての店舗で在庫は十分です。")
 
-    # ======= 地理的可視化機能 =======
+    # ======= Pydeckで地理的可視化機能 =======
     st.write("### 倉庫・店舗の在庫マップ")
 
     # 住所データを使用して緯度・経度を取得
@@ -78,7 +79,27 @@ if uploaded_file is not None:
     # 緯度・経度が存在する行のみをフィルタリング
     warehouse_data_clean = warehouse_data.dropna(subset=['latitude', 'longitude'])
 
-    # Streamlitのst.mapで地図を表示
-    st.map(warehouse_data_clean[['latitude', 'longitude']])
+    # Pydeckでマップ作成
+    layer = pdk.Layer(
+        "ScatterplotLayer",
+        data=warehouse_data_clean,
+        get_position=['longitude', 'latitude'],
+        get_radius=50000,
+        get_color=[0, 100, 255],
+        pickable=True
+    )
+
+    # Pydeckのビュー設定
+    view_state = pdk.ViewState(
+        latitude=warehouse_data_clean['latitude'].mean(),
+        longitude=warehouse_data_clean['longitude'].mean(),
+        zoom=5,
+        pitch=50,
+    )
+
+    # Pydeckチャート表示
+    r = pdk.Deck(layers=[layer], initial_view_state=view_state)
+    st.pydeck_chart(r)
+
 else:
     st.warning("CSVファイルをアップロードしてください。")
