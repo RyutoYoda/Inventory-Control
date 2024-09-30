@@ -3,17 +3,20 @@ import pandas as pd
 import plotly.express as px
 import folium
 from streamlit_folium import st_folium
+from geopy.geocoders import Nominatim
 from datetime import datetime, timedelta
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+
+# Geocoderの設定
+geolocator = Nominatim(user_agent="inventory_app")
 
 # ページの設定
 st.set_page_config(page_title="在庫管理アプリ", page_icon="📦")
 
 # 補充タイミングを計算する関数
 def calculate_replenishment(stock_level, daily_usage, safety_stock, lead_time):
-    current_stock = stock_level
     consumption = daily_usage * lead_time
     replenishment_point = safety_stock + consumption
     return replenishment_point
@@ -23,7 +26,6 @@ def send_email_notification(to_emails, stock_level, replenishment_point):
     subject = "在庫補充のお知らせ"
     body = f"現在の在庫 ({stock_level} 単位) が補充ポイント ({replenishment_point} 単位) を下回りました。"
     
-    # メールの設定
     from_email = "youremail@example.com"
     password = "yourpassword"
     
@@ -31,12 +33,11 @@ def send_email_notification(to_emails, stock_level, replenishment_point):
     for email in to_emails:
         msg = MIMEMultipart()
         msg["From"] = from_email
-        msg["To"] = email.strip()  # メールアドレスをトリム
+        msg["To"] = email.strip()
         msg["Subject"] = subject
         msg.attach(MIMEText(body, "plain"))
         
         try:
-            # GmailのSMTPサーバを利用
             server = smtplib.SMTP("smtp.gmail.com", 587)
             server.starttls()
             server.login(from_email, password)
@@ -57,7 +58,7 @@ with st.expander("アプリの使い方を表示"):
     - **1日の消費量**: 1日に消費される商品の単位数。
     - **安全在庫数**: 補充が必要になる前に維持したい最小限の在庫量。
     - **リードタイム**: 注文から納入までにかかる日数。
-    在庫が補充ポイントを下回った場合、警告が表示されます。メール通知設定後、通知が複数メールアドレスに送信されます。
+    在庫が補充ポイントを下回った場合、警告が表示され、複数メールアドレスに通知が送信されます。
     """)
 
 # サイドバーでパラメータを入力
@@ -82,7 +83,7 @@ if stock_level <= replenishment_point:
 else:
     st.success(f"在庫は十分です。現在の在庫数: {stock_level} 単位。")
 
-# 次の入荷日の予測（後でデータベースと連携可能）
+# 次の入荷日の予測
 next_arrival_date = datetime.now() + timedelta(days=lead_time)
 st.write(f"次の入荷予定日: {next_arrival_date.strftime('%Y-%m-%d')}")
 
@@ -98,25 +99,40 @@ df = pd.DataFrame(stock_data)
 fig = px.line(df, x="日付", y=["在庫数", "安全在庫"], title="在庫と安全在庫の推移", markers=True)
 st.plotly_chart(fig)
 
-# 倉庫や店舗ごとの在庫をマップで表示
+# ======= 地理的可視化機能（サブ機能）=======
 st.write("### 倉庫・店舗の在庫マップ")
 
-# 仮の倉庫データ
+# 住所データを使用して緯度・経度を取得
+def geocode_address(address):
+    try:
+        location = geolocator.geocode(address)
+        if location:
+            return location.latitude, location.longitude
+        else:
+            return None, None
+    except:
+        return None, None
+
+# サンプルデータ（CSVからのデータを想定）
 warehouse_data = pd.DataFrame({
-    '倉庫名': ['倉庫A', '倉庫B', '倉庫C'],
-    '緯度': [35.6895, 34.0522, 51.5074],
-    '経度': [139.6917, -118.2437, -0.1276],
+    '倉庫名': ['倉庫A', '倉庫B', '店舗A'],
+    '住所': ['東京都新宿区西新宿2-8-1', '大阪府大阪市北区梅田1-1-1', '福岡県福岡市博多駅中央街1-1'],
     '在庫数': [300, 150, 500]
 })
 
-# Foliumマップ作成
-m = folium.Map(location=[35.6895, 139.6917], zoom_start=2)
-for i, row in warehouse_data.iterrows():
-    folium.Marker(
-        location=[row['緯度'], row['経度']],
-        popup=f"{row['倉庫名']}: {row['在庫数']}個",
-        icon=folium.Icon(color="blue" if row['在庫数'] > 200 else "red")
-    ).add_to(m)
+# 住所から緯度経度を取得
+warehouse_data['緯度'], warehouse_data['経度'] = zip(*warehouse_data['住所'].apply(geocode_address))
 
-# StreamlitでFoliumマップを表示
+# Foliumマップ作成
+m = folium.Map(location=[35.6895, 139.6917], zoom_start=5)
+
+for i, row in warehouse_data.iterrows():
+    if pd.notnull(row['緯度']) and pd.notnull(row['経度']):
+        folium.Marker(
+            location=[row['緯度'], row['経度']],
+            popup=f"{row['倉庫名']}: {row['在庫数']}個",
+            icon=folium.Icon(color="blue" if row['在庫数'] > 200 else "red")
+        ).add_to(m)
+
+# FoliumマップをStreamlitで表示
 st_folium(m, width=700)
