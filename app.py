@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
-import pydeck as pdk
 from geopy.geocoders import Nominatim
+import time
 
 # Geocoderの設定
 geolocator = Nominatim(user_agent="inventory_app")
@@ -59,7 +59,7 @@ if uploaded_file is not None:
     else:
         st.success("すべての店舗で在庫は十分です。")
 
-    # ======= Pydeckで地理的可視化機能 =======
+    # ======= 地理的可視化機能 =======
     st.write("### 倉庫・店舗の在庫マップ")
 
     # 住所データを使用して緯度・経度を取得
@@ -74,32 +74,23 @@ if uploaded_file is not None:
             return None, None
 
     # 緯度・経度を取得
-    warehouse_data['latitude'], warehouse_data['longitude'] = zip(*warehouse_data['住所'].apply(geocode_address))
+    latitudes = []
+    longitudes = []
+
+    for address in warehouse_data['住所']:
+        lat, lon = geocode_address(address)
+        latitudes.append(lat)
+        longitudes.append(lon)
+        time.sleep(1)  # geopyのAPI制限を回避するために1秒待機
+
+    # 新しい緯度と経度の列をデータフレームに追加
+    warehouse_data['latitude'] = latitudes
+    warehouse_data['longitude'] = longitudes
 
     # 緯度・経度が存在する行のみをフィルタリング
     warehouse_data_clean = warehouse_data.dropna(subset=['latitude', 'longitude'])
 
-    # Pydeckでマップ作成
-    layer = pdk.Layer(
-        "ScatterplotLayer",
-        data=warehouse_data_clean,
-        get_position=['longitude', 'latitude'],
-        get_radius=50000,
-        get_color=[0, 100, 255],
-        pickable=True
-    )
-
-    # Pydeckのビュー設定
-    view_state = pdk.ViewState(
-        latitude=warehouse_data_clean['latitude'].mean(),
-        longitude=warehouse_data_clean['longitude'].mean(),
-        zoom=5,
-        pitch=50,
-    )
-
-    # Pydeckチャート表示
-    r = pdk.Deck(layers=[layer], initial_view_state=view_state)
-    st.pydeck_chart(r)
-
+    # Streamlitのst.mapで地図を表示
+    st.map(warehouse_data_clean[['latitude', 'longitude']])
 else:
     st.warning("CSVファイルをアップロードしてください。")
