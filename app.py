@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 from geopy.geocoders import Nominatim
 import plotly.express as px
+import folium
+from streamlit_folium import st_folium
 import time
 
 # Geocoderの設定
@@ -28,7 +30,7 @@ with st.expander("アプリの使い方を表示"):
     st.write("""
     - **CSVファイルをアップロード**: 各店舗や倉庫の住所、在庫数、1日の消費量、リードタイムなどを含むCSVファイルをアップロードします。
     - **在庫消費量と補充タイミングの可視化**: データをもとに、在庫消費の推移と補充タイミングを表示します。
-    - **住所から地図上にプロット**: 住所データをもとに、自動的に緯度と経度を取得し、地図上にマッピングします。
+    - **住所から地図上にプロット**: 住所データをもとに、自動的に緯度と経度を取得し、地図上に残在庫数を表示します。
     """)
 
 # サイドバーでパラメータを入力
@@ -106,10 +108,18 @@ if uploaded_file is not None:
     # 緯度・経度が存在する行のみをフィルタリング
     warehouse_data_clean = warehouse_data.dropna(subset=['latitude', 'longitude'])
 
-    # 列名を英語に変更してst.mapに対応させる
-    warehouse_data_clean = warehouse_data_clean.rename(columns={"latitude": "lat", "longitude": "lon"})
+    # Foliumマップを作成
+    m = folium.Map(location=[35.6895, 139.6917], zoom_start=5)
 
-    # Streamlitのst.mapで地図を表示
-    st.map(warehouse_data_clean[['lat', 'lon']])
+    # マップにマーカーを追加し、ポップアップに残在庫数を表示
+    for _, row in warehouse_data_clean.iterrows():
+        folium.Marker(
+            location=[row['latitude'], row['longitude']],
+            popup=f"{row['店舗名']}: 在庫数 {row['在庫数']}個",
+            icon=folium.Icon(color="blue" if row['在庫数'] > 200 else "red")
+        ).add_to(m)
+
+    # FoliumマップをStreamlitで表示
+    st_folium(m, width=700, height=500)
 else:
     st.warning("CSVファイルをアップロードしてください。")
